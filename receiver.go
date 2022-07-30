@@ -13,32 +13,27 @@ const (
 )
 
 func main() {
-	githubHook, _ := github.New(github.Options.Secret("MyGitHubSuperSecretSecrect...?"))
+	githubHook, _ := github.New(github.Options.Secret("MyGitHubSuperSecretSecrect"))
 
 	http.HandleFunc(githubPath, func(w http.ResponseWriter, r *http.Request) {
-		payload, err := githubHook.Parse(r, github.ReleaseEvent, github.PullRequestEvent)
-		log.Info("Payload:\n", payload)
+		payload, err := githubHook.Parse(r, github.WorkflowJobEvent)
 		if err != nil {
 			if err == github.ErrEventNotFound {
 				log.Warning(err)
 				// ok event wasn;t one of the ones asked to be parsed
 			}
+			log.Error(err)
 		}
 
-		switch payload.(type) {
+		switch load := payload.(type) {
 
-		case github.ReleasePayload:
-			release := payload.(github.ReleasePayload)
+		case github.WorkflowJobPayload:
+			workflowJob := load
 			// Do whatever you want from here...
-			fmt.Printf("%+v", release)
-
-		case github.PullRequestPayload:
-			pullRequest := payload.(github.PullRequestPayload)
-			// Do whatever you want from here...
-			fmt.Printf("%+v", pullRequest)
+			fmt.Printf("%+v\n", workflowJob)
 
 		default:
-			log.Warning(fmt.Sprintf("Payload type not handled - Type: %T", payload))
+			log.Warning(fmt.Sprintf("Payload type not handled - Type: %T", load))
 		}
 	})
 	log.Info("Listening...")
