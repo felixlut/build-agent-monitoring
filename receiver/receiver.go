@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,7 +9,8 @@ import (
 
 	backoff "github.com/cenkalti/backoff/v4"
 	"github.com/go-playground/webhooks/v6/github"
-	"github.com/jackc/pgx/v4"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -17,21 +18,24 @@ const (
 	githubPath = "/github"
 )
 
-
-func generateSQLSelectQuery(fields, webhookTable string) string {
-	return fmt.Sprintf("select %s from %s", fields, webhookTable)
+type WorkflowJobHook struct {
+	workflowRunId     int64  `db:"workflow_run_id"`
+	workflowJobStatus string `db:"workflow_job_status"`
+	workflowJobId     int64  `db:"workflow_job_id"`
 }
 
 func main() {
-	webhookTable := os.Getenv("WEBHOOK_TABLE")
+	log.SetFormatter(&log.JSONFormatter{})
+	log.SetLevel(log.DebugLevel)
 
-	log.Info("Connecting to database...")
-	var conn *pgx.Conn
+	var db *sqlx.DB
 	var err error
 	connectToDB := func() error {
-		conn, err = pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+		db, err = sqlx.Connect("postgres", os.Getenv("DATABASE_URL"))
 		return err
 	}
+
+	log.Info("Connecting to database...")
 	err = backoff.RetryNotify(connectToDB, backoff.NewExponentialBackOff(), func(err error, duration time.Duration) {
 		log.Info(fmt.Sprintf("Error encountered, retrying in %f seconds", duration.Seconds()))
 		log.Info(err)
@@ -40,29 +44,41 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
 		os.Exit(1)
 	}
-	defer conn.Close(context.Background())
 	log.Info("Connection established")
 
-	githubHook, _ := github.New(github.Options.Secret("MyGitHubSuperSecretSecrect"))
+	githubHook, _ := github.New(github.Options.Secret(os.Getenv("GITHUB_WEBHOOK_SECRET")))
+
 	http.HandleFunc(githubPath, func(w http.ResponseWriter, r *http.Request) {
+		log.Debug("Webhook received")
 		payload, err := githubHook.Parse(r, github.WorkflowJobEvent)
 		if err != nil {
-			if err == github.ErrEventNotFound {
-				log.Warning(err)
-				// ok event wasn;t one of the ones asked to be parsed
+			if errors.Is(err, github.ErrEventNotFound) {
+				log.Error("Does not handle this type of webhook, ignoring... ", err)
+				return
 			}
-			log.Error(err)
+			log.Error("Invalid payload, ignoring... \n", err)
+			return
 		}
-
 		switch load := payload.(type) {
 
 		case github.WorkflowJobPayload:
-			workflowJob := load
-			// Do whatever you want from here...
-			log.Info("%+v\n", workflowJob)
+			log.Debug(fmt.Sprintf("Recieved webhook with action: %s", load.Action))
 
-		default:
-			log.Warning(fmt.Sprintf("Payload type not handled - Type: %T", load))
+			log.Debug("Initiating transaction")
+
+			hoooooook := &WorkflowJobHook{load.WorkflowJob.RunID, load.Action, load.WorkflowJob.ID}
+			log.Debug(hoooooook)
+			tx := db.MustBegin()
+			tx.MustExec(`
+				INSERT INTO webhooks_workflow_job 
+				(workflow_run_id, workflow_job_status, workflow_job_id) 
+				VALUES ($1, $2, $3)`,
+				load.WorkflowJob.RunID, load.Action, load.WorkflowJob.ID)
+			err = tx.Commit()
+			if err != nil {
+				log.Error(err)
+			}
+			log.Debug("Transaction successful")
 		}
 	})
 	log.Info("Listening...")

@@ -6,10 +6,10 @@ WORKDIR /usr/src/app
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
-COPY . .
-RUN go build -v -o /usr/local/bin/receiver .
+COPY *.go ./
+RUN go build -o /usr/local/bin/receiver .
+# RUN go build -v -o /usr/local/bin/receiver .
 
-EXPOSE 9988/tcp
-EXPOSE 8899/tcp
+EXPOSE 3000/tcp
 
 CMD ["receiver"]
