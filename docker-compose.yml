@@ -1,0 +1,24 @@
+version: "3.1"
+services:
+  receiver:
+    build: .
+    ports:
+    - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://postgres:S3cret@db:5432/postgres
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: S3cret
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - 5432:5432
+
+  # adminer:
+  #   image: adminer
+  #   restart: always
+  #   ports:
+  #     - 8080:8080
