@@ -2,13 +2,15 @@ version: "3.1"
 services:
   receiver:
     build: ./receiver
+    restart: always
     ports:
     - "3000:3000"
     environment:
       DATABASE_URL: postgres://postgres:S3cret@db:5432/postgres
+      WEBHOOK_TABLE: webhooks
 
   db:
-    image: postgres
+    build: ./postgres-db
     restart: always
     environment:
       POSTGRES_PASSWORD: S3cret
@@ -16,9 +18,3 @@ services:
       POSTGRES_DB: postgres
     ports:
       - 5432:5432
-
-  # adminer:
-  #   image: adminer
-  #   restart: always
-  #   ports:
-  #     - 8080:8080
